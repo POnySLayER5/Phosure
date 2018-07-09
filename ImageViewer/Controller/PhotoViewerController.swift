@@ -19,13 +19,15 @@ class PhotoViewerController: UIViewController {
     
     var context: NSManagedObjectContext!
     
+    var units: String = "cm"
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
         photoImageView.image = photo.image
         titleTextField.text = photo.title
         indicatorLengthTextField.text = "\(photo.indicatorLength)"
-        objectLengthTextField.text = "\(photo.objectLength)cm"
+        objectLengthTextField.text = "\(photo.objectLength) \(units)"
         
         indicatorLengthTextField.keyboardType = .decimalPad
     }
@@ -38,6 +40,9 @@ class PhotoViewerController: UIViewController {
         zoomController.photo = photo
         zoomController.context = self.context
         
+        zoomController.updateIndicatorLines()
+        zoomController.updateObjectLines()
+        
         navigationController?.present(zoomController, animated: true, completion: nil)
     }
     
@@ -47,12 +52,17 @@ class PhotoViewerController: UIViewController {
     }
     
     @IBAction func changedIndicatorLength(_ sender: UITextField) {
-        //Fix string to double
-        guard let newIndicatorLength = Double("indicatorLengthTextField.text") else {
-            print("Not good"); return }
+        guard let newIndicatorLength: Double = Double(indicatorLengthTextField.text!) else {
+            //Pop-up Alert for invalid entry
+            return
+        }
+        let ratio: Double = newIndicatorLength/photo.indicatorLength
+        photo.objectLength *= ratio
         photo.indicatorLength = newIndicatorLength
-        photo.objectLength = objectLength()
+        
         context.saveChanges()
+        
+        objectLengthTextField.text = "\(photo.objectLength) \(units)"
     }
     
     @IBAction func deletePhoto(_ sender: UIButton) {
@@ -62,12 +72,6 @@ class PhotoViewerController: UIViewController {
             navigationController?.popViewController(animated: true)
         }
     }
-    
-    func objectLength() -> Double {
-        return 0.00//placeholder for massive calculations
-    }
 }
-
-
 
 

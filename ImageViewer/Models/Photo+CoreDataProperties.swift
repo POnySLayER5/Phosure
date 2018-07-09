@@ -29,6 +29,11 @@ extension Photo {
     @NSManaged public var objectLength: Double
     @NSManaged public var indicatorLength: Double
     @NSManaged public var title: String?
+    
+    @NSManaged public var indicatorPoints: [CGPoint]
+    @NSManaged public var objectPoints: [CGPoint]
+    
+    @NSManaged public var objectLengthFound: Bool
 }
 
 extension Photo {
@@ -41,9 +46,14 @@ extension Photo {
         
         photo.creationDate = Date() as NSDate
         photo.imageData = UIImageJPEGRepresentation(image, 1.0)! as NSData
-        photo.objectLength = 123.12
-        photo.indicatorLength = 23.12
-        photo.title = "No title for now"
+        photo.objectLength = 0.00
+        photo.indicatorLength = 0.00
+        photo.title = "Untitled"
+        
+        photo.indicatorPoints = Array(repeating: CGPoint(x: 0, y: 0), count: 4)
+        photo.objectPoints = Array(repeating: CGPoint(x: 0, y: 0), count: 4)
+        
+        photo.objectLengthFound = false
         
         return photo
     }
