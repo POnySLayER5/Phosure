@@ -1,11 +1,3 @@
-//
-//  PhotoPickerManager.swift
-//  ImageViewer
-//
-//  Created by Screencast on 9/27/17.
-//  Copyright © 2017 Treehouse. All rights reserved.
-//
-
 import UIKit
 import MobileCoreServices
 

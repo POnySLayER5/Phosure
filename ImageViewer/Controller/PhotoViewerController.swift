@@ -1,11 +1,3 @@
-//
-//  PhotoViewerController.swift
-//  ImageViewer
-//
-//  Created by Screencast on 9/29/17.
-//  Copyright © 2017 Treehouse. All rights reserved.
-//
-
 import UIKit
 import CoreData
 
@@ -26,8 +18,9 @@ class PhotoViewerController: UIViewController {
         
         photoImageView.image = photo.image
         titleTextField.text = photo.title
+        
         indicatorLengthTextField.text = "\(photo.indicatorLength)"
-        objectLengthTextField.text = "\(photo.objectLength) \(units)"
+        updateObjectLengthText()
         
         indicatorLengthTextField.keyboardType = .decimalPad
     }
@@ -60,9 +53,9 @@ class PhotoViewerController: UIViewController {
         photo.objectLength *= ratio
         photo.indicatorLength = newIndicatorLength
         
-        context.saveChanges()
+        updateObjectLengthText()
         
-        objectLengthTextField.text = "\(photo.objectLength) \(units)"
+        context.saveChanges()
     }
     
     @IBAction func deletePhoto(_ sender: UIButton) {
@@ -73,5 +66,68 @@ class PhotoViewerController: UIViewController {
         }
     }
 }
+
+//Updating Object Line Text and Math Behind it
+extension PhotoViewerController {
+    
+    override func viewWillAppear(_ animated: Bool) {
+        updateObjectLengthText()
+    }
+    
+    public func updateObjectLengthText(){
+        if photo.indicatorLength == 0 || photo.objectLength == 0{
+            objectLengthTextField.text = "0.0"
+        }
+        
+        let decimals: Int = 2; //Placeholder
+        
+        objectLengthTextField.text = "\(roundMy(photo.objectLength, to: decimals)) \(units)"
+    }
+    
+    private func roundMy(_ num: Double, to decimals: Int) -> Double {
+        return round(num * pow(of: 10.0, to: decimals))/pow(of: 10.0, to: decimals)
+    }
+    
+    private func pow(of num: Double, to exponent: Int) -> Double {
+        var output: Double = 1
+        if exponent < 0 {
+            for _ in exponent...0 {
+                output /= num
+            }
+        } else {
+            for _ in 0...exponent {
+                output *= num
+            }
+        }
+        
+        return output
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

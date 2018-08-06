@@ -1,11 +1,3 @@
-//
-//  PhotoZoomController.swift
-//  ImageViewer
-//
-//  Created by Screencast on 10/2/17.
-//  Copyright © 2017 Treehouse. All rights reserved.
-//
-
 import UIKit
 import CoreGraphics
 import CoreData
@@ -22,7 +14,8 @@ class PhotoZoomController: UIViewController {
     @IBOutlet weak var imageViewTrailingConstraint: NSLayoutConstraint!
     
     var photo: Photo!
-    
+
+    private let empty: CGPoint = CGPoint(x: 0, y: 0)
     private var indicatorLines: [Line] = Array(repeating: Line(from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: 0)), count: 4)
     private var objectLines: [Line] = Array(repeating: Line(from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: 0)), count: 4)
     
@@ -30,8 +23,11 @@ class PhotoZoomController: UIViewController {
     
     var context: NSManagedObjectContext!
     
-    var brushWidth: CGFloat = 10.0;
-    var brushColor: CGColor = UIColor.cyan.cgColor
+    var brushWidth: CGFloat = 15.0
+    var brushColor: CGColor = UIColor.clear.cgColor
+    
+    private let indicatorColor = UIColor.cyan.cgColor
+    private let objectColor = UIColor.red.cgColor
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -71,81 +67,135 @@ class PhotoZoomController: UIViewController {
         imageViewLeadingConstraint.constant = xOffset
         imageViewTrailingConstraint.constant = xOffset
     }
-    
-    
+}
+
+////////////////////////////////////////////LOGIC BEHIND DRAWING & MODIFYING THE LINES AND POINTS//////////////////////////////////
+extension PhotoZoomController {
     @IBAction func tappedInside(_ sender: Any) {
         guard let sender = sender as? UITapGestureRecognizer else {
             return
         }
         let touch = sender.location(in: self.photoImageView)
-        //print(touch)
         
-        for i in 0...3 {
-            if photo.indicatorPoints[i].x == 0 {
+        //Add an indicator Point
+        for i in 0..<photo.indicatorPoints.count {
+            if photo.indicatorPoints[i] == empty {
                 photo.indicatorPoints[i] = touch
                 updateIndicatorLines()
                 
-                context.saveChanges()
-                
-                if(i == 3) {
-                    drawLine(between: photo.indicatorPoints)
+                if i > 0 {
+                    brushColor = indicatorColor
+                    drawLine(between: indicatorLines[i - 1].points())
+                    if i == 3 {
+                        drawLine(between: indicatorLines[i].points())
+                    }
                 }
+                context.saveChanges()
                 return
             }
         }
         
-        for i in 0...3 {
-            if photo.objectPoints[i].x == 0 {
-                if i == 0 {
-                    updateSharedIndicatorLineIndex(to: touch)
+        //Add an object Point, when all the indicator points are added
+        for i in 0..<photo.objectPoints.count {
+            if photo.objectPoints[i] == empty {
+                if i <= 1 {
+                    if i == 0 {
+                        updateSharedIndicatorLineIndex(to: touch)
+                    }
                     photo.objectPoints[i] = indicatorLines[sharedIndicatorLineIndex].closestPoint(to: touch)// -- This is the process that is required to have the 1st and 2nd points, of both indicator and object, on the same line
-                    context.saveChanges()
-                } else if i == 1 {
-                    photo.objectPoints[i] = indicatorLines[sharedIndicatorLineIndex].closestPoint(to: touch)
-                    context.saveChanges()
+                    if i == 1 {
+                        brushColor = objectColor
+                        updateObjectLines()
+                        drawLine(between: objectLines[i - 1].points())
+                    }
                 } else {
                     photo.objectPoints[i] = touch
-                    if(i == 3) {
-                        drawLine(between: photo.objectPoints)
-                        updateObjectLines()
+                    updateObjectLines()
+                    brushColor = objectColor
+                    drawLine(between: objectLines[i - 1].points())
+                    
+                    if i == photo.objectPoints.count - 1 {
+                        drawLine(between: objectLines[i].points())
                         
-                        photo.objectLength = objectLength()
-                        
+                        photo.objectLength = updateObjectLength()
                         print("Calculated Object Length: \(photo.objectLength)")
-                        
-                        context.saveChanges()
                     }
                 }
+                context.saveChanges()
                 return
             }
         }
-        //modifyAPoint(with: touch)
+        
+        //When all the points are added, future touches will modify the closest point within a limit
+        modifyAPoint(with: touch)
         
         return
     }
     
     private func restoreDrawing() {
-        var previouslyDrawnObjectLines: [CGPoint] = photo.objectPoints
-        for i in (1...3).reversed() {
-            if photo.objectPoints[i] != CGPoint(x: 0, y: 0) {
-                drawLine(between: previouslyDrawnObjectLines)
+        var previouslyDrawnObjectPoints: [CGPoint] = photo.objectPoints
+        var previouslyDrawnIndicatorPoints: [CGPoint] = photo.indicatorPoints
+        
+        for i in (1..<previouslyDrawnObjectPoints.count).reversed() {
+            if previouslyDrawnObjectPoints[i] == empty {
+                previouslyDrawnObjectPoints.removeLast()
+            } else {
+                if i == photo.objectPoints.count - 1 {
+                    previouslyDrawnObjectPoints.append(previouslyDrawnObjectPoints[0])
+                }
+                previouslyDrawnIndicatorPoints.append(previouslyDrawnIndicatorPoints[0])
+                
+                brushColor = indicatorColor
+                drawLine(between: previouslyDrawnIndicatorPoints)
+                
+                brushColor = objectColor
+                drawLine(between: previouslyDrawnObjectPoints)
+                return // If the Object Lines were drawn, then the indicator lines were also drawn
             }
-            previouslyDrawnObjectLines.removeLast()
         }
         
-        var previouslyDrawnIndicatorLines: [CGPoint] = photo.indicatorPoints
-        for i in (1...3).reversed() {
-            if photo.indicatorPoints[i] != CGPoint(x: 0, y: 0) {
-                drawLine(between: previouslyDrawnIndicatorLines)
+        for i in (1..<previouslyDrawnIndicatorPoints.count).reversed() {
+            if previouslyDrawnIndicatorPoints[i] == empty {
+                previouslyDrawnIndicatorPoints.removeLast()
+            } else {
+                if i == photo.indicatorPoints.count - 1 {
+                    previouslyDrawnIndicatorPoints.append(previouslyDrawnIndicatorPoints[0])
+                }
+                brushColor = indicatorColor
+                drawLine(between: previouslyDrawnIndicatorPoints)
             }
-            previouslyDrawnIndicatorLines.removeLast()
+        }
+    }
+    
+    private func modifyAPoint(with touch: CGPoint) {
+        var distances: [Double] = [Double]()
+        
+        for i in 0...3 {
+            distances.append(photo.indicatorPoints[i].distanceTo(touch))
+        }
+        
+        for i in 4...7 {
+            distances.append(photo.objectPoints[i - 4].distanceTo(touch))
+        }
+        //print(distances)
+        
+        let index: Int = indexAtLowestValue(in: distances)
+        let modifyingLimitValue: Double = 50.0
+        
+        //Only modify a point if the touch is within the max distance value
+        if distances[index] < modifyingLimitValue {
+            if index < 4 {//Indicator Points
+                photo.indicatorPoints[index] = touch
+            } else {//Object Points
+                photo.objectPoints[index - 4] = touch
+            }
         }
     }
 }
 
-//Dealing with Points, Lines and such
+///////////////////////////////////////MATH BEHIND THE LINES AND POINTS AND STUFF/////////////////////////////////////////////
 extension PhotoZoomController {
-    func drawLine(between points: [CGPoint]) {
+    private func drawLine(between points: [CGPoint]) {
         UIGraphicsBeginImageContextWithOptions(self.photoImageView.bounds.size, false, 0)
         
         photoImageView.image?.draw(in: self.photoImageView.bounds)
@@ -158,10 +208,7 @@ extension PhotoZoomController {
         context.setLineWidth(brushWidth)
         context.setStrokeColor(brushColor)
         
-        var pointsToBeDrawn: [CGPoint] = points
-        pointsToBeDrawn.append(points[0])
-        
-        context.addLines(between: pointsToBeDrawn)
+        context.addLines(between: points)
         context.strokePath()
         //Sets new image
         if let edittedImage = UIGraphicsGetImageFromCurrentImageContext() {
@@ -210,27 +257,6 @@ extension PhotoZoomController {
         }
     }
     
-    private func modifyAPoint(with touch: CGPoint) {
-        var distances: [Double] = [Double]()
-        
-        for i in 0...3 {
-            distances.append(photo.indicatorPoints[i].distanceTo(touch))
-        }
-        
-        for i in 4...7 {
-            distances.append(photo.objectPoints[i - 4].distanceTo(touch))
-        }
-        print(distances)
-        
-        let index: Int = indexAtLowestValue(in: distances)
-        
-        if index < 4 {//Indicator Points
-            photo.indicatorPoints[index] = touch
-        } else {//Object Points
-            photo.objectPoints[index - 4] = touch
-        }
-    }
-    
     public func updateIndicatorLines() {
         for i in 0...2 {
             indicatorLines[i] = Line(from: photo.indicatorPoints[i], to: photo.indicatorPoints[i + 1])
@@ -246,7 +272,7 @@ extension PhotoZoomController {
         objectLines[3] = Line(from: photo.objectPoints[3], to: photo.objectPoints[0])
     }
     
-    public func objectLength() -> Double {
+    public func updateObjectLength() -> Double {
         photo.objectLength = Double(objectLines[0].length())
         
         if photo.indicatorLength == 0.00 {
@@ -254,7 +280,8 @@ extension PhotoZoomController {
         }
         
         let ratio: CGFloat = objectLines[0].length()/indicatorLines[sharedIndicatorLineIndex].length()
-        return Double(ratio) * photo.indicatorLength
+        photo.objectLength = Double(ratio) * photo.indicatorLength
+        return photo.objectLength
     }
 }
 
@@ -324,8 +351,12 @@ class Line {
     }
 
     func length() -> CGFloat {
-        print(sqrt((point1.x - point2.x) * (point1.x - point2.x) + (point1.y - point2.y) * (point1.y - point2.y)))
+        //print(sqrt((point1.x - point2.x) * (point1.x - point2.x) + (point1.y - point2.y) * (point1.y - point2.y)))
         return sqrt((point1.x - point2.x) * (point1.x - point2.x) + (point1.y - point2.y) * (point1.y - point2.y))
+    }
+    
+    func points() -> [CGPoint] {
+        return [point1, point2]
     }
 }
 
@@ -335,3 +366,26 @@ extension CGPoint {
         return Double(sqrt(a))
     }
 }
+
+
+/*
+ DOCTYPE=html
+ <head>
+ <title>Richard's Diary</title>
+ </head>
+ <body>
+ Friday, August 3rd, 2018
+ Cold....hungry.....starving....also I miss Kat xoxox
+ If I don't write another entry, I must have been mauled by a bear
+ Probably because I wa stoo busy eating
+ GOodye
+ </body>
+ 
+ <style>
+ </style>
+ 
+ </html>
+ 
+ Thanks Jessie Huang
+ */
+

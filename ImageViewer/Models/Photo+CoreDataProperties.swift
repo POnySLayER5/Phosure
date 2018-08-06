@@ -1,12 +1,3 @@
-//
-//  Photo+CoreDataProperties.swift
-//  ImageViewer
-//
-//  Created by Screencast on 9/27/17.
-//  Copyright © 2017 Treehouse. All rights reserved.
-//
-//
-
 import Foundation
 import CoreData
 import UIKit
