@@ -44,8 +44,7 @@ extension PhotoListController: PhotoPickerManagerDelegate {
     func manager(_ manager: PhotoPickerManager, didPickImage image: UIImage) {
         let _ = Photo.with(image, in: context)
         context.saveChanges()
-        manager.dismissPhotoPicker(animated: true, completion:
-            nil)
+        manager.dismissPhotoPicker(animated: true, completion: nil)
     }
 }
 

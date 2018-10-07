@@ -28,7 +28,7 @@ class PhotoPickerManager: NSObject {
     private func configure() {
         if UIImagePickerController.isSourceTypeAvailable(.camera) {
             imagePickerController.sourceType = .camera
-            imagePickerController.cameraDevice = .front
+            imagePickerController.cameraDevice = .rear
         } else {
             imagePickerController.sourceType = .photoLibrary
         }

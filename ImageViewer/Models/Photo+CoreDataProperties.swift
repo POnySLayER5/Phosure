@@ -17,14 +17,13 @@ extension Photo {
     
     @NSManaged public var creationDate: NSDate?
     @NSManaged public var imageData: NSData?
-    @NSManaged public var objectLength: Double
+    @NSManaged public var edittedImageData: NSData?
+    @NSManaged public var ratio: Double
     @NSManaged public var indicatorLength: Double
     @NSManaged public var title: String?
     
     @NSManaged public var indicatorPoints: [CGPoint]
     @NSManaged public var objectPoints: [CGPoint]
-    
-    @NSManaged public var objectLengthFound: Bool
 }
 
 extension Photo {
@@ -37,14 +36,13 @@ extension Photo {
         
         photo.creationDate = Date() as NSDate
         photo.imageData = UIImageJPEGRepresentation(image, 1.0)! as NSData
-        photo.objectLength = 0.00
-        photo.indicatorLength = 0.00
-        photo.title = "Untitled"
+        photo.edittedImageData = UIImageJPEGRepresentation(image, 1.0)! as NSData
+        photo.ratio = 0.0
+        photo.indicatorLength = 0.0
+        photo.title = ""
         
         photo.indicatorPoints = Array(repeating: CGPoint(x: 0, y: 0), count: 4)
         photo.objectPoints = Array(repeating: CGPoint(x: 0, y: 0), count: 4)
-        
-        photo.objectLengthFound = false
         
         return photo
     }
@@ -53,6 +51,14 @@ extension Photo {
 extension Photo {
     var image: UIImage {
         return UIImage(data: self.imageData! as Data)!
+    }
+    
+    var edittedImage: UIImage {
+        return UIImage(data: self.edittedImageData! as Data)!
+    }
+    
+    var objectLength: Double {
+        return ratio * indicatorLength
     }
 }
 

@@ -13,6 +13,10 @@ class PhotoZoomController: UIViewController {
     @IBOutlet weak var imageViewTopConstraint: NSLayoutConstraint!
     @IBOutlet weak var imageViewTrailingConstraint: NSLayoutConstraint!
     
+    @IBOutlet weak var lockButton: UIButton!
+    
+    var locked: Bool = false
+    
     var photo: Photo!
 
     private let empty: CGPoint = CGPoint(x: 0, y: 0)
@@ -23,11 +27,20 @@ class PhotoZoomController: UIViewController {
     
     var context: NSManagedObjectContext!
     
-    var brushWidth: CGFloat = 15.0
-    var brushColor: CGColor = UIColor.clear.cgColor
+    private var brushWidth: CGFloat = 0.0
+    private var brushColor: CGColor = UIColor.clear.cgColor
+    private var brushAlpha: CGFloat = 0.0
     
+    private let lineWidth: CGFloat = 15.0
     private let indicatorColor = UIColor.cyan.cgColor
     private let objectColor = UIColor.red.cgColor
+    private let lineAlpha: CGFloat = 1.0
+    
+    private let highlighterColor = UIColor.cyan.cgColor
+    private let highlighterBrushWidth: CGFloat = 40.0
+    private let highlighterAlpha: CGFloat = 0.5
+    
+    private var highlighterPoints: [CGPoint] = []
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -42,6 +55,14 @@ class PhotoZoomController: UIViewController {
         updateZoomScale()
         updateConstraintsForSize(view.bounds.size)
         view.backgroundColor = .black
+        
+        //Initializes Drawing Tool Attributes
+        brushWidth = lineWidth
+        brushColor = indicatorColor
+        brushAlpha = lineAlpha
+        
+        photoImageView.isUserInteractionEnabled = true
+        scrollView.isUserInteractionEnabled = true
     }
     
     var minZoomScale: CGFloat {
@@ -67,71 +88,36 @@ class PhotoZoomController: UIViewController {
         imageViewLeadingConstraint.constant = xOffset
         imageViewTrailingConstraint.constant = xOffset
     }
-}
-
-////////////////////////////////////////////LOGIC BEHIND DRAWING & MODIFYING THE LINES AND POINTS//////////////////////////////////
-extension PhotoZoomController {
-    @IBAction func tappedInside(_ sender: Any) {
-        guard let sender = sender as? UITapGestureRecognizer else {
-            return
-        }
-        let touch = sender.location(in: self.photoImageView)
-        
-        //Add an indicator Point
-        for i in 0..<photo.indicatorPoints.count {
-            if photo.indicatorPoints[i] == empty {
-                photo.indicatorPoints[i] = touch
-                updateIndicatorLines()
-                
-                if i > 0 {
-                    brushColor = indicatorColor
-                    drawLine(between: indicatorLines[i - 1].points())
-                    if i == 3 {
-                        drawLine(between: indicatorLines[i].points())
-                    }
-                }
-                context.saveChanges()
-                return
-            }
-        }
-        
-        //Add an object Point, when all the indicator points are added
-        for i in 0..<photo.objectPoints.count {
-            if photo.objectPoints[i] == empty {
-                if i <= 1 {
-                    if i == 0 {
-                        updateSharedIndicatorLineIndex(to: touch)
-                    }
-                    photo.objectPoints[i] = indicatorLines[sharedIndicatorLineIndex].closestPoint(to: touch)// -- This is the process that is required to have the 1st and 2nd points, of both indicator and object, on the same line
-                    if i == 1 {
-                        brushColor = objectColor
-                        updateObjectLines()
-                        drawLine(between: objectLines[i - 1].points())
-                    }
-                } else {
-                    photo.objectPoints[i] = touch
-                    updateObjectLines()
-                    brushColor = objectColor
-                    drawLine(between: objectLines[i - 1].points())
-                    
-                    if i == photo.objectPoints.count - 1 {
-                        drawLine(between: objectLines[i].points())
-                        
-                        photo.objectLength = updateObjectLength()
-                        print("Calculated Object Length: \(photo.objectLength)")
-                    }
-                }
-                context.saveChanges()
-                return
-            }
-        }
-        
-        //When all the points are added, future touches will modify the closest point within a limit
-        modifyAPoint(with: touch)
-        
-        return
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        photo.edittedImageData = UIImageJPEGRepresentation(photoImageView.image!, 1.0)! as NSData
     }
     
+    @IBAction func lockOrUnlock(_ sender: Any) {
+        scrollView.isScrollEnabled = locked
+        locked = !locked
+        if locked {
+            lockButton.setTitle("Unlock", for: .normal)
+        } else {
+            lockButton.setTitle("Lock", for: .normal)
+        }
+    }
+}
+
+/*
+////////////////////////////////////////////LOGIC BEHIND DRAWING & MODIFYING THE LINES AND POINTS//////////////////////////////////
+extension UIScrollView {
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        print("touche")
+        if touches.first!.force >= 0.2 {
+            highlighterPoints.append(touches.first!.location(in: photoImageView))
+            print("force")
+        }
+    }
+}
+ */
+
+extension PhotoZoomController {
     private func restoreDrawing() {
         var previouslyDrawnObjectPoints: [CGPoint] = photo.objectPoints
         var previouslyDrawnIndicatorPoints: [CGPoint] = photo.indicatorPoints
@@ -173,28 +159,45 @@ extension PhotoZoomController {
         for i in 0...3 {
             distances.append(photo.indicatorPoints[i].distanceTo(touch))
         }
-        
         for i in 4...7 {
             distances.append(photo.objectPoints[i - 4].distanceTo(touch))
         }
-        //print(distances)
         
         let index: Int = indexAtLowestValue(in: distances)
-        let modifyingLimitValue: Double = 50.0
+        let modifyingLimitValue: Double = 100.0
         
         //Only modify a point if the touch is within the max distance value
         if distances[index] < modifyingLimitValue {
+            photoImageView.image = photo.image
             if index < 4 {//Indicator Points
                 photo.indicatorPoints[index] = touch
+                updateIndicatorLines()
             } else {//Object Points
                 photo.objectPoints[index - 4] = touch
+                updateObjectLines()
             }
+            updateRatio()
+            redrawLines()
         }
     }
 }
 
 ///////////////////////////////////////MATH BEHIND THE LINES AND POINTS AND STUFF/////////////////////////////////////////////
 extension PhotoZoomController {
+    private func redrawLines() {
+        var redrawnIndicatorPoints: [CGPoint] = photo.indicatorPoints
+        redrawnIndicatorPoints.append(photo.indicatorPoints[0])
+        
+        var redrawnObjectPoints: [CGPoint] = photo.objectPoints
+        redrawnObjectPoints.append(photo.objectPoints[0])
+        
+        brushColor = indicatorColor
+        drawLine(between: redrawnIndicatorPoints)
+        
+        brushColor = objectColor
+        drawLine(between: redrawnObjectPoints)
+    }
+    
     private func drawLine(between points: [CGPoint]) {
         UIGraphicsBeginImageContextWithOptions(self.photoImageView.bounds.size, false, 0)
         
@@ -272,16 +275,11 @@ extension PhotoZoomController {
         objectLines[3] = Line(from: photo.objectPoints[3], to: photo.objectPoints[0])
     }
     
-    public func updateObjectLength() -> Double {
-        photo.objectLength = Double(objectLines[0].length())
+    public func updateRatio(){
+        let ratio: Double = (Double)(objectLines[0].length()/indicatorLines[sharedIndicatorLineIndex].length())
+        photo.ratio = ratio
         
-        if photo.indicatorLength == 0.00 {
-            return 0.00
-        }
-        
-        let ratio: CGFloat = objectLines[0].length()/indicatorLines[sharedIndicatorLineIndex].length()
-        photo.objectLength = Double(ratio) * photo.indicatorLength
-        return photo.objectLength
+        context.saveChanges()
     }
 }
 
