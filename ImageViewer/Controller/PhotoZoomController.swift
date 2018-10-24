@@ -42,6 +42,8 @@ class PhotoZoomController: UIViewController {
     
     private var highlighterPoints: [CGPoint] = []
     
+    private var drawingState: DrawingState = .highlighter
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -94,29 +96,18 @@ class PhotoZoomController: UIViewController {
     }
     
     @IBAction func lockOrUnlock(_ sender: Any) {
-        scrollView.isScrollEnabled = locked
         locked = !locked
         if locked {
             lockButton.setTitle("Unlock", for: .normal)
         } else {
             lockButton.setTitle("Lock", for: .normal)
         }
+        scrollView.isScrollEnabled = !locked
+        scrollView.isUserInteractionEnabled = !locked
     }
 }
 
-/*
 ////////////////////////////////////////////LOGIC BEHIND DRAWING & MODIFYING THE LINES AND POINTS//////////////////////////////////
-extension UIScrollView {
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        print("touche")
-        if touches.first!.force >= 0.2 {
-            highlighterPoints.append(touches.first!.location(in: photoImageView))
-            print("force")
-        }
-    }
-}
- */
-
 extension PhotoZoomController {
     private func restoreDrawing() {
         var previouslyDrawnObjectPoints: [CGPoint] = photo.objectPoints
@@ -152,34 +143,6 @@ extension PhotoZoomController {
             }
         }
     }
-    
-    private func modifyAPoint(with touch: CGPoint) {
-        var distances: [Double] = [Double]()
-        
-        for i in 0...3 {
-            distances.append(photo.indicatorPoints[i].distanceTo(touch))
-        }
-        for i in 4...7 {
-            distances.append(photo.objectPoints[i - 4].distanceTo(touch))
-        }
-        
-        let index: Int = indexAtLowestValue(in: distances)
-        let modifyingLimitValue: Double = 100.0
-        
-        //Only modify a point if the touch is within the max distance value
-        if distances[index] < modifyingLimitValue {
-            photoImageView.image = photo.image
-            if index < 4 {//Indicator Points
-                photo.indicatorPoints[index] = touch
-                updateIndicatorLines()
-            } else {//Object Points
-                photo.objectPoints[index - 4] = touch
-                updateObjectLines()
-            }
-            updateRatio()
-            redrawLines()
-        }
-    }
 }
 
 ///////////////////////////////////////MATH BEHIND THE LINES AND POINTS AND STUFF/////////////////////////////////////////////
@@ -207,9 +170,18 @@ extension PhotoZoomController {
             return
         }
         
-        context.setLineCap(.round)
-        context.setLineWidth(brushWidth)
-        context.setStrokeColor(brushColor)
+        switch drawingState {
+        case .highlighter:
+            context.setLineCap(.round)
+            context.setLineWidth(highlighterBrushWidth)
+            context.setStrokeColor(highlighterColor)
+            context.setAlpha(highlighterAlpha)
+        case .line:
+            context.setLineCap(.round)
+            context.setLineWidth(lineWidth)
+            context.setStrokeColor(brushColor)
+            context.setAlpha(brushAlpha)
+        }
         
         context.addLines(between: points)
         context.strokePath()
@@ -363,6 +335,11 @@ extension CGPoint {
         let a =  (self.x - point.x) * (self.x - point.x) + (self.y - point.y) * (self.y - point.y)
         return Double(sqrt(a))
     }
+}
+
+enum DrawingState {
+    case line
+    case highlighter
 }
 
 
