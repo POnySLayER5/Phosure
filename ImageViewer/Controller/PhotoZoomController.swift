@@ -4,6 +4,14 @@ import CoreData
 
 class PhotoZoomController: UIViewController {
     
+    private var sharedIndicatorLineIndex: Int = 0
+    
+    var context: NSManagedObjectContext!
+    
+    private var drawingState: DrawingState = .highlighter
+    
+    private var minForce: CGFloat = 5
+    
     //Photo View's Variables
     @IBOutlet weak var scrollView: UIScrollView!
     
@@ -18,18 +26,17 @@ class PhotoZoomController: UIViewController {
     var locked: Bool = false
     
     var photo: Photo!
-
+    
+    //Lines Variables
+    
     private let empty: CGPoint = CGPoint(x: 0, y: 0)
+    
     private var indicatorLines: [Line] = Array(repeating: Line(from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: 0)), count: 4)
     private var objectLines: [Line] = Array(repeating: Line(from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: 0)), count: 4)
     
-    private var sharedIndicatorLineIndex: Int = 0
+    private var highlighterPoints: [CGPoint] = []
     
-    var context: NSManagedObjectContext!
-    
-    private var brushWidth: CGFloat = 0.0
-    private var brushColor: CGColor = UIColor.clear.cgColor
-    private var brushAlpha: CGFloat = 0.0
+    //Brush Variables
     
     private let lineWidth: CGFloat = 15.0
     private let indicatorColor = UIColor.cyan.cgColor
@@ -40,28 +47,16 @@ class PhotoZoomController: UIViewController {
     private let highlighterBrushWidth: CGFloat = 40.0
     private let highlighterAlpha: CGFloat = 0.5
     
-    private var highlighterPoints: [CGPoint] = []
-    
-    private var drawingState: DrawingState = .highlighter
-    
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        photoImageView.image = photo.image
+        photoImageView.image = photo.edittedImage
         photoImageView.sizeToFit()
         scrollView.contentSize = photoImageView.bounds.size
-        
-        //If there are points, draw them
-        restoreDrawing()
         
         updateZoomScale()
         updateConstraintsForSize(view.bounds.size)
         view.backgroundColor = .black
-        
-        //Initializes Drawing Tool Attributes
-        brushWidth = lineWidth
-        brushColor = indicatorColor
-        brushAlpha = lineAlpha
         
         photoImageView.isUserInteractionEnabled = true
         scrollView.isUserInteractionEnabled = true
@@ -102,65 +97,89 @@ class PhotoZoomController: UIViewController {
         } else {
             lockButton.setTitle("Lock", for: .normal)
         }
+        
         scrollView.isScrollEnabled = !locked
         scrollView.isUserInteractionEnabled = !locked
     }
 }
 
+/////////////////////////////////////////////////////////IMAGE EDGE DETECTION////////////////////////////////////////////////////////////
+extension PhotoZoomController {
+    private func highlightedPointsAsNSNumber() -> [[NSNumber]] {
+        var points: [[NSNumber]] = []
+        
+        for point in highlighterPoints {
+            points.append(point.toNSNumberArray())
+        }
+        
+        return points
+    }
+    
+    private func getEdgeLines() -> [CGPoint] {
+        var image = OpenCVWrapper.grayscaleImage(photo.image)
+        image = OpenCVWrapper.gaussianBlurImage(image)
+        
+        let lineEdges: [[NSNumber]] = OpenCVWrapper.cannyEdges(image) //Thread 1: Fatal error: Unexpectedly found nil while unwrapping an Optional value
+        
+        let edgePoints: [[NSNumber]] = OpenCVWrapper.highlightedLines(highlightedPointsAsNSNumber(), in: lineEdges)
+        
+        return NSNumberArrayToCGPointArray(edgePoints)
+    }
+    
+    private func NSNumberArrayToCGPointArray(_ numbers: [[NSNumber]]) -> [CGPoint] {
+        
+        
+        return [CGPoint(x: 10, y: 10)]
+    }
+}
+
+extension CGPoint {
+    func toNSNumberArray() -> [NSNumber] {
+        return [NSNumber(value: Float(self.x)), NSNumber(value: Float(self.y))]
+    }
+}
+
 ////////////////////////////////////////////LOGIC BEHIND DRAWING & MODIFYING THE LINES AND POINTS//////////////////////////////////
 extension PhotoZoomController {
-    private func restoreDrawing() {
-        var previouslyDrawnObjectPoints: [CGPoint] = photo.objectPoints
-        var previouslyDrawnIndicatorPoints: [CGPoint] = photo.indicatorPoints
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let _ = touches.first else { return }
         
-        for i in (1..<previouslyDrawnObjectPoints.count).reversed() {
-            if previouslyDrawnObjectPoints[i] == empty {
-                previouslyDrawnObjectPoints.removeLast()
-            } else {
-                if i == photo.objectPoints.count - 1 {
-                    previouslyDrawnObjectPoints.append(previouslyDrawnObjectPoints[0])
-                }
-                previouslyDrawnIndicatorPoints.append(previouslyDrawnIndicatorPoints[0])
+        photoImageView.image = photo.image//Reset Image
+    }
+    
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+        
+        if touch.force >= minForce {
+            if isNewPoint(touch.location(in: scrollView)) {
+                highlighterPoints.append(touch.location(in: scrollView))
                 
-                brushColor = indicatorColor
-                drawLine(between: previouslyDrawnIndicatorPoints)
-                
-                brushColor = objectColor
-                drawLine(between: previouslyDrawnObjectPoints)
-                return // If the Object Lines were drawn, then the indicator lines were also drawn
             }
         }
+    }
+    
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
         
-        for i in (1..<previouslyDrawnIndicatorPoints.count).reversed() {
-            if previouslyDrawnIndicatorPoints[i] == empty {
-                previouslyDrawnIndicatorPoints.removeLast()
-            } else {
-                if i == photo.indicatorPoints.count - 1 {
-                    previouslyDrawnIndicatorPoints.append(previouslyDrawnIndicatorPoints[0])
-                }
-                brushColor = indicatorColor
-                drawLine(between: previouslyDrawnIndicatorPoints)
-            }
+        highlighterPoints.append(touch.location(in: scrollView))
+        highlighterPoints.append(highlighterPoints[0])
+        
+        drawingState = .highlighter
+        drawLine(between: highlighterPoints)
+        
+        print(getEdgeLines())
+    }
+    
+    private func isNewPoint(_ point: CGPoint) -> Bool {
+        if highlighterPoints.isEmpty {
+            return true
         }
+        return !(point.distanceTo(highlighterPoints[highlighterPoints.count - 1]) <= 25)
     }
 }
 
 ///////////////////////////////////////MATH BEHIND THE LINES AND POINTS AND STUFF/////////////////////////////////////////////
 extension PhotoZoomController {
-    private func redrawLines() {
-        var redrawnIndicatorPoints: [CGPoint] = photo.indicatorPoints
-        redrawnIndicatorPoints.append(photo.indicatorPoints[0])
-        
-        var redrawnObjectPoints: [CGPoint] = photo.objectPoints
-        redrawnObjectPoints.append(photo.objectPoints[0])
-        
-        brushColor = indicatorColor
-        drawLine(between: redrawnIndicatorPoints)
-        
-        brushColor = objectColor
-        drawLine(between: redrawnObjectPoints)
-    }
-    
     private func drawLine(between points: [CGPoint]) {
         UIGraphicsBeginImageContextWithOptions(self.photoImageView.bounds.size, false, 0)
         
@@ -176,11 +195,16 @@ extension PhotoZoomController {
             context.setLineWidth(highlighterBrushWidth)
             context.setStrokeColor(highlighterColor)
             context.setAlpha(highlighterAlpha)
-        case .line:
+        case .indicatorLine:
             context.setLineCap(.round)
             context.setLineWidth(lineWidth)
-            context.setStrokeColor(brushColor)
-            context.setAlpha(brushAlpha)
+            context.setStrokeColor(indicatorColor)
+            context.setAlpha(lineAlpha)
+        case .objectLine:
+            context.setLineCap(.round)
+            context.setLineWidth(lineWidth)
+            context.setStrokeColor(objectColor)
+            context.setAlpha(lineAlpha)
         }
         
         context.addLines(between: points)
@@ -223,7 +247,9 @@ extension PhotoZoomController {
         var closestDistance = indicatorLines[0].closestDistanceTo(point)
         distances.append(closestDistance)
         
-        for i in 1...3 {
+        let x = indicatorLines.count - 1
+        
+        for i in 1...x {
             distances.append(indicatorLines[i].closestDistanceTo(point))
             if (distances[i] < closestDistance) {
                 closestDistance = distances[i]
@@ -233,18 +259,26 @@ extension PhotoZoomController {
     }
     
     public func updateIndicatorLines() {
-        for i in 0...2 {
+        let x = indicatorLines.count - 1
+        if x == 0 {
+            return
+        }
+        for i in 0...x - 1 {
             indicatorLines[i] = Line(from: photo.indicatorPoints[i], to: photo.indicatorPoints[i + 1])
         }
         
-        indicatorLines[3] = Line(from: photo.indicatorPoints[3], to: photo.indicatorPoints[0])
+        indicatorLines[x] = Line(from: photo.indicatorPoints[x], to: photo.indicatorPoints[0])
     }
     
     public func updateObjectLines() {
-        for i in 0...2 {
+        let x = objectLines.count - 1
+        if x == 0 {
+            return
+        }
+        for i in 0...x - 1 {
             objectLines[i] = Line(from: photo.objectPoints[i], to: photo.objectPoints[i + 1])
         }
-        objectLines[3] = Line(from: photo.objectPoints[3], to: photo.objectPoints[0])
+        objectLines[x] = Line(from: photo.objectPoints[x], to: photo.objectPoints[0])
     }
     
     public func updateRatio(){
@@ -338,29 +372,7 @@ extension CGPoint {
 }
 
 enum DrawingState {
-    case line
+    case indicatorLine
+    case objectLine
     case highlighter
 }
-
-
-/*
- DOCTYPE=html
- <head>
- <title>Richard's Diary</title>
- </head>
- <body>
- Friday, August 3rd, 2018
- Cold....hungry.....starving....also I miss Kat xoxox
- If I don't write another entry, I must have been mauled by a bear
- Probably because I wa stoo busy eating
- GOodye
- </body>
- 
- <style>
- </style>
- 
- </html>
- 
- Thanks Jessie Huang
- */
-
